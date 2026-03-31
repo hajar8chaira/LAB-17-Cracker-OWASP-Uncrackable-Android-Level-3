@@ -91,8 +91,6 @@ La première étape consiste à vérifier que l'émulateur Android est correctem
 adb devices
 ```
 
-> **Figure 1 – Détection de l'émulateur via `adb devices`**
-
 <p align="center"> <img src="images/0.1.png" width="600"> </p>
 
 L'émulateur `emulator-5556` est actif et accessible. On installe ensuite l'APK :
@@ -105,7 +103,6 @@ adb install UnCrackable-Level3.apk
 
 Au premier lancement de l'application sur un émulateur rooté, un dialogue s'affiche immédiatement :
 
-> **Figure 2 – Erreur "Rooting or tampering detected" au lancement**
 
 <p align="center"> <img src="images/1.png" width="400"> </p>
 
@@ -127,7 +124,6 @@ jadx-gui UnCrackable-Level3.apk
 
 La classe principale `MainActivity` révèle plusieurs éléments critiques dès l'ouverture :
 
-> **Figure 3 – Vue d'ensemble de MainActivity dans JADX**
 
 <p align="center"> <img src="images/2.png" width="600"> </p>
 <p align="center"> <img src="images/29.1.png" width="600"> </p>
@@ -158,8 +154,6 @@ La méthode `onCreate()` enchaîne plusieurs vérifications :
 **Analyse :** La méthode `showDialog()` est le **point de sortie forcée** de l'application. Toute détection (root, debug, tamper) aboutit à cet appel. Notre stratégie sera de **neutraliser cette méthode directement dans le bytecode Smali**.
 
 ### La vérification d'intégrité : verifyLibs()
-
-> **Figure 4 – Code de verifyLibs() dans JADX**
 
 <p align="center"> <img src="images/3.png" width="600"> </p>
 
