@@ -261,7 +261,7 @@ Android exige que tout APK soit signé pour pouvoir être installé :
 
 > ** – Application lancée sans popup de root detection**
 > 
-<p align="center"> <img src="images/18.png" width="400"> </p>
+<p align="center"> <img src="images/1.png" width="400"> </p>
 
 L'application se lance désormais sans afficher le dialogue de détection de root. Le bypass Java est **opérationnel**.
 
@@ -278,13 +278,6 @@ Malgré le bypass Java, l'application dispose d'une seconde ligne de défense im
 On extrait la bibliothèque depuis l'APK (qui est en réalité une archive ZIP) :
 
 ### Ouverture dans Ghidra
-
-1. Lancer Ghidra
-2. Créer un nouveau projet : `File > New Project`
-3. Importer le fichier : `File > Import File > libfoo.so`
-4. Sélectionner le format **ELF** et l'architecture **x86** (ou ARM selon l'APK)
-5. Lancer l'auto-analyse : `Analysis > Auto Analyze`
-6. Attendre la fin de l'analyse (processus pouvant durer plusieurs minutes)
 
 <p align="center"> <img src="images/21.png" width="600"> </p>
 
