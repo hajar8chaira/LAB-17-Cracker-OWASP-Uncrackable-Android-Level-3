@@ -104,7 +104,7 @@ adb install UnCrackable-Level3.apk
 Au premier lancement de l'application sur un émulateur rooté, un dialogue s'affiche immédiatement :
 
 
-<p align="center"> <img src="images/1.png" width="400"> </p>
+<p align="center"> <img src="images/0.png" width="400"> </p>
 
 Ce comportement confirme que l'application est protégée par une détection de root active. L'application se ferme dès que l'utilisateur clique sur **OK**. Notre premier objectif est de neutraliser ce mécanisme.
 
