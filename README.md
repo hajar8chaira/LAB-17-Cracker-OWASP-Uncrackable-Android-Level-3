@@ -1,7 +1,5 @@
 #  OWASP UnCrackable Level 3 – Analyse, Bypass et Extraction du Secret
 
-> **Domaine :** Sécurité Mobile · Reverse Engineering Android  
-> **Niveau :** Avancé  
 > **Objectif :** Contourner les protections Java et natives d'une application Android obfusquée, puis extraire et décrypter la clé secrète cachée.
 
 ---
@@ -95,7 +93,7 @@ adb devices
 
 > **Figure 1 – Détection de l'émulateur via `adb devices`**
 
-![Figure 1 - adb devices](screenshots/adb_devices.png)
+<p align="center"> <img src="images/0.1.png" width="600"> </p>
 
 L'émulateur `emulator-5556` est actif et accessible. On installe ensuite l'APK :
 
@@ -109,13 +107,13 @@ Au premier lancement de l'application sur un émulateur rooté, un dialogue s'af
 
 > **Figure 2 – Erreur "Rooting or tampering detected" au lancement**
 
-![Figure 2 - Root detected](screenshots/root_detected.png)
+<p align="center"> <img src="images/1.png" width="400"> </p>
 
 Ce comportement confirme que l'application est protégée par une détection de root active. L'application se ferme dès que l'utilisateur clique sur **OK**. Notre premier objectif est de neutraliser ce mécanisme.
 
 ---
 
-## 🔍 Analyse Statique avec JADX
+##  Analyse Statique avec JADX
 
 ### Décompilation de l'APK
 
@@ -131,21 +129,8 @@ La classe principale `MainActivity` révèle plusieurs éléments critiques dès
 
 > **Figure 3 – Vue d'ensemble de MainActivity dans JADX**
 
-![Figure 3 - JADX MainActivity](screenshots/jadx_mainactivity.png)
-
-On identifie immédiatement :
-
-```java
-public class MainActivity extends AppCompatActivity {
-    private static final String TAG = "UnCrackable3";
-    static int tampered = 0;
-    private static final String xorkey = "pizzapizzapizzapizzapizza";  // ← Clé XOR visible !
-    private CodeCheck check;
-    Map<String, Long> crc;
-
-    private native long baz();
-    private native void init(byte[] bArr);  // ← Initialisation native
-```
+<p align="center"> <img src="images/2.png" width="600"> </p>
+<p align="center"> <img src="images/29.1.png" width="600"> </p>
 
 **Observations clés :**
 - La clé XOR `"pizzapizzapizzapizzapizza"` est **directement visible** dans le code décompilé
@@ -163,37 +148,11 @@ import sg.vantagepoint.util.RootDetection;
 
 La méthode `onCreate()` enchaîne plusieurs vérifications :
 
-```java
-@Override
-protected void onCreate(Bundle savedInstanceState) {
-    init(xorkey.getBytes());  // Passage de la clé XOR au code natif
-    
-    if (RootDetection.checkRoot1() || RootDetection.checkRoot2() || RootDetection.checkRoot3()
-        || IntegrityCheck.isDebuggable(getApplicationContext())
-        || tampered != 0) {
-        showDialog("Rooting or tampering detected.");  // ← Déclencheur
-    }
-    verifyLibs();
-    // ...
-}
-```
+<p align="center"> <img src="images/4.png" width="600"> </p>
 
 ### La Méthode showDialog() : Point de Blocage Principal
 
-```java
-private void showDialog(String str) {
-    AlertDialog.Builder alertDialogCreate = new AlertDialog.Builder(this);
-    alertDialogCreate.setTitle(str);
-    alertDialogCreate.setMessage("This is unacceptable. The app is now going to exit.");
-    alertDialogCreate.setButton(-3, "OK", new DialogInterface.OnClickListener() {
-        @Override
-        public void onClick(DialogInterface dialogInterface, int i) {
-            System.exit(0);  // ← Fermeture forcée de l'application
-        }
-    });
-    alertDialogCreate.setCancelable(false);
-    alertDialogCreate.show();
-}
+<p align="center"> <img src="images/32.png" width="600"> </p>
 ```
 
 **Analyse :** La méthode `showDialog()` est le **point de sortie forcée** de l'application. Toute détection (root, debug, tamper) aboutit à cet appel. Notre stratégie sera de **neutraliser cette méthode directement dans le bytecode Smali**.
@@ -202,34 +161,7 @@ private void showDialog(String str) {
 
 > **Figure 4 – Code de verifyLibs() dans JADX**
 
-![Figure 4 - verifyLibs](screenshots/jadx_verifylibs.png)
-
-```java
-private void verifyLibs() {
-    this.crc = new HashMap<>();
-    this.crc.put("armeabi-v7a", Long.valueOf(Long.parseLong(getResources().getString(R.string.armeabi_v7a))));
-    this.crc.put("arm64-v8a",   Long.valueOf(Long.parseLong(getResources().getString(R.string.arm64_v8a))));
-    this.crc.put("x86",         Long.valueOf(Long.parseLong(getResources().getString(R.string.x86))));
-    this.crc.put("x86_64",      Long.valueOf(Long.parseLong(getResources().getString(R.string.x86_64))));
-    
-    try {
-        ZipFile zipFile = new ZipFile(getPackageCodePath());
-        for (Map.Entry<String, Long> entry : this.crc.entrySet()) {
-            String str = "lib/" + entry.getKey() + "/libfoo.so";
-            ZipEntry entry2 = zipFile.getEntry(str);
-            if (entry2.getCrc() != entry.getValue().longValue()) {
-                tampered = 31337;  // ← Marqueur de tamper si CRC invalide
-            }
-        }
-        ZipEntry entry3 = zipFile.getEntry("classes.dex");
-        if (entry3.getCrc() != baz()) {  // ← baz() est une méthode native retournant le CRC attendu
-            tampered = 31337;
-        }
-    } catch (IOException unused) {
-        System.exit(0);
-    }
-}
-```
+<p align="center"> <img src="images/3.png" width="600"> </p>
 
 **Implication critique :** Si on modifie `classes.dex` (via patch Smali), la valeur CRC32 changera, ce qui positionnera `tampered = 31337`. Or, `tampered` est vérifié dans `onCreate()`. C'est un **anti-tamper double layer** : la modification Smali sera détectée via le CRC natif.
 
@@ -237,17 +169,13 @@ private void verifyLibs() {
 
 ### Chargement de la Bibliothèque Native
 
-```java
-static {
-    System.loadLibrary("foo");  // ← Chargement de libfoo.so
-}
-```
+<p align="center"> <img src="images/6.png" width="600"> </p>
 
 La bibliothèque `libfoo.so` contient toute la logique de protection native que nous devrons analyser dans Ghidra.
 
 ---
 
-## 🛠️ Bypass Java via Smali
+##  Bypass Java via Smali
 
 ### Qu'est-ce que le Smali ?
 
@@ -258,8 +186,11 @@ Le **Smali** est le langage d'assemblage du bytecode Dalvik. Quand `apktool` dé
 ```bash
 apktool d UnCrackable-Level3.apk -o UnCrackable3_decompiled
 ```
+<p align="center"> <img src="images/7.png" width="600"> </p>
 
 Cette commande génère la structure suivante :
+<p align="center"> <img src="images/8.png" width="600"> </p>
+<p align="center"> <img src="images/9.png" width="600"> </p>
 
 ```
 UnCrackable3_decompiled/
@@ -283,6 +214,9 @@ On ouvre `MainActivity.smali` dans un éditeur de texte (VS Code, Notepad++, etc
 ### Étape 3 – Identifier la méthode showDialog()
 
 On recherche la signature de la méthode :
+<p align="center"> <img src="images/10.png" width="600"> </p>
+<p align="center"> <img src="images/11.png" width="600"> </p>
+<p align="center"> <img src="images/12.png" width="600"> </p>
 
 ```smali
 .method private showDialog(Ljava/lang/String;)V
@@ -290,49 +224,8 @@ On recherche la signature de la méthode :
 
 **Code Smali AVANT le patch :**
 
-```smali
-.method private showDialog(Ljava/lang/String;)V
-    .locals 3
-    .param p1, "str"    # Ljava/lang/String;
+<p align="center"> <img src="images/14.png" width="600"> </p>
 
-    .line 34
-    new-instance v0, Landroid/app/AlertDialog$Builder;
-
-    invoke-direct {v0, p0}, Landroid/app/AlertDialog$Builder;-><init>(Landroid/content/Context;)V
-
-    .line 35
-    invoke-virtual {v0, p1}, Landroid/app/AlertDialog$Builder;->setTitle(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;
-
-    .line 36
-    const-string v1, "This is unacceptable. The app is now going to exit."
-
-    invoke-virtual {v0, v1}, Landroid/app/AlertDialog$Builder;->setMessage(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;
-
-    .line 37
-    const/4 v1, -0x3
-
-    new-instance v2, Lsg/vantagepoint/uncrackable3/MainActivity$2;
-
-    invoke-direct {v2, p0}, Lsg/vantagepoint/uncrackable3/MainActivity$2;-><init>(Lsg/vantagepoint/uncrackable3/MainActivity;)V
-
-    invoke-virtual {v0, v1, v2}, Landroid/app/AlertDialog$Builder;->setButton(ILjava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)V
-
-    .line 44
-    const/4 v1, 0x0
-
-    invoke-virtual {v0, v1}, Landroid/app/AlertDialog$Builder;->setCancelable(Z)V
-
-    .line 45
-    invoke-virtual {v0}, Landroid/app/AlertDialog$Builder;->show()Landroid/app/AlertDialog;
-
-    .line 46
-    return-void
-.end method
-```
-
-> **Figure 5 – Code Smali de showDialog() AVANT patch**
-
-![Figure 5 - Smali avant patch](screenshots/smali_before.png)
 
 ### Étape 4 – Appliquer le Patch
 
@@ -340,17 +233,8 @@ On remplace **tout le corps** de la méthode par un simple `return-void` :
 
 **Code Smali APRÈS le patch :**
 
-```smali
-.method private showDialog(Ljava/lang/String;)V
-    .locals 0
+<p align="center"> <img src="images/15.png" width="600"> </p>
 
-    return-void
-.end method
-```
-
-> **Figure 6 – Code Smali de showDialog() APRÈS patch**
-
-![Figure 6 - Smali après patch](screenshots/smali_after.png)
 
 **Pourquoi ce patch fonctionne-t-il ?**
 
@@ -368,61 +252,22 @@ En remplaçant tout le corps de `showDialog()` par `return-void`, on fait en sor
 apktool b UnCrackable3_decompiled -o UnCrackable3_patched.apk
 ```
 
-En cas de succès :
-
-```
-I: Using Apktool 2.9.x
-I: Checking whether sources has changed...
-I: Smaling smali folder into classes.dex...
-I: Building resources...
-I: Building apk file...
-I: Copying unknown files/dir...
-I: Built apk into: UnCrackable3_patched.apk
-```
-
-> **Figure 7 – Build réussi de l'APK patché**
-
-![Figure 7 - Build APK](screenshots/apktool_build.png)
+<p align="center"> <img src="images/16.png" width="600"> </p>
 
 ### Étape 2 – Générer un Keystore de Signature
 
 Android exige que tout APK soit signé pour pouvoir être installé :
 
-```bash
-keytool -genkey -v -keystore my-release-key.jks \
-        -alias alias_name \
-        -keyalg RSA \
-        -keysize 2048 \
-        -validity 10000
-```
+<p align="center"> <img src="images/17.png" width="600"> </p>
 
-On peut utiliser des valeurs arbitraires pour les informations du certificat (CN, O, L, etc.).
-
-### Étape 3 – Signer l'APK
-
-```bash
-apksigner sign --ks my-release-key.jks \
-               --ks-key-alias alias_name \
-               --out UnCrackable3_signed.apk \
-               UnCrackable3_patched.apk
-```
 
 ### Étape 4 – Installer et Lancer l'APK Signé
 
-```bash
-# Désinstaller l'ancienne version
-adb uninstall owasp.mstg.uncrackable3
+<p align="center"> <img src="images/18.png" width="600"> </p>
 
-# Installer la version patchée
-adb install UnCrackable3_signed.apk
-
-# Lancer l'application
-adb shell am start -n owasp.mstg.uncrackable3/.MainActivity
-```
-
-> **Figure 8 – Application lancée sans popup de root detection**
-
-![Figure 8 - App lancée](screenshots/app_launched.png)
+> ** – Application lancée sans popup de root detection**
+> 
+<p align="center"> <img src="images/18.png" width="400"> </p>
 
 L'application se lance désormais sans afficher le dialogue de détection de root. Le bypass Java est **opérationnel**.
 
@@ -438,14 +283,6 @@ Malgré le bypass Java, l'application dispose d'une seconde ligne de défense im
 
 On extrait la bibliothèque depuis l'APK (qui est en réalité une archive ZIP) :
 
-```bash
-# Méthode 1 : via adb après installation
-adb pull /data/app/owasp.mstg.uncrackable3-1/lib/x86/libfoo.so .
-
-# Méthode 2 : dézipper l'APK
-unzip UnCrackable-Level3.apk lib/x86/libfoo.so
-```
-
 ### Ouverture dans Ghidra
 
 1. Lancer Ghidra
@@ -454,6 +291,8 @@ unzip UnCrackable-Level3.apk lib/x86/libfoo.so
 4. Sélectionner le format **ELF** et l'architecture **x86** (ou ARM selon l'APK)
 5. Lancer l'auto-analyse : `Analysis > Auto Analyze`
 6. Attendre la fin de l'analyse (processus pouvant durer plusieurs minutes)
+
+<p align="center"> <img src="images/21.png" width="600"> </p>
 
 ### Identification des Fonctions Critiques
 
@@ -466,50 +305,16 @@ Dans le **Symbol Tree** de Ghidra, on identifie les fonctions exportées (JNI) e
 
 ### Analyse de FUN_001037c0 – La Fonction Anti-Debug
 
-En décompilant `FUN_001037c0`, Ghidra révèle le code pseudo-C suivant :
+<p align="center"> <img src="images/23.png" width="600"> </p>
 
-```c
-void FUN_001037c0(void)
-{
-    FILE *fp;
-    char line[512];
-    char *result;
-    
-    while (1) {  // ← Boucle infinie : elle tourne dans un thread séparé
-        sleep(5);
-        
-        fp = fopen("/proc/self/maps", "r");  // ← Lecture des mappings mémoire du processus
-        
-        if (fp != NULL) {
-            while (fgets(line, 512, fp) != NULL) {
-                // Cherche les signatures de Frida dans les bibliothèques chargées
-                result = strstr(line, "frida");
-                if (result != NULL) {
-                    goodbye();   // ← Fermeture immédiate si Frida détecté
-                }
-                result = strstr(line, "xposed");
-                if (result != NULL) {
-                    goodbye();
-                }
-            }
-            fclose(fp);
-        }
-    }
-    return;
-}
-```
 
 **Analyse du mécanisme :**
 
 Le fichier `/proc/self/maps` est un fichier virtuel Linux exposant la **carte mémoire virtuelle** du processus courant. Frida injecte ses agents sous forme de bibliothèques partagées (`frida-agent-64.so`, etc.) qui apparaissent dans ce fichier. En scannant régulièrement ce fichier, l'application peut détecter toute tentative d'instrumentation dynamique.
 
+<p align="center"> <img src="images/24.png" width="600"> </p>
 La fonction tourne dans un **thread en arrière-plan** (lancé depuis la fonction `init()`), ce qui signifie qu'elle surveille en permanence la mémoire, même après le démarrage de l'activité principale.
 
-**Voilà pourquoi Frida est bloqué sur cette application.**
-
-> **Figure 9 – Code de FUN_001037c0 dans Ghidra (avant patch)**
-
-![Figure 9 - Ghidra anti-debug avant](screenshots/ghidra_antidebug_before.png)
 
 ---
 
@@ -523,7 +328,8 @@ Neutraliser la fonction `FUN_001037c0` pour qu'elle se termine immédiatement sa
 
 La méthode la plus propre consiste à **remplacer les premiers octets de la fonction** par une instruction de retour immédiat (`RET` sur x86, ou `BX LR` sur ARM).
 
-**Architecture cible x86 :**
+<p align="center"> <img src="images/25.png" width="600"> </p>
+
 
 | Instruction | Opcode |
 |-------------|--------|
@@ -545,25 +351,10 @@ Dans le **Listing View**, naviguer vers l'adresse `001037c0`. On voit le début 
 001037c6  SUB   ESP, 0x21c
 ...
 ```
-
-#### 2. Patcher via l'éditeur d'octets
-
-Dans Ghidra :
-1. `Window > Bytes` pour ouvrir la vue hexadécimale
-2. Naviguer vers l'offset de `FUN_001037c0`
-3. Activer le mode édition : `Edit > Enable Disassembler`
-4. Remplacer l'octet `0x55` (PUSH EBP) par `0xC3` (RET)
-
-Alternatively, via l'interface Ghidra :
+ via l'interface Ghidra :
 - Clic droit sur l'instruction > `Patch Instruction`
 - Remplacer par `RET`
-
-#### 3. Exporter le binaire patché
-
-```
-File > Export Program > ELF
-```
-
+- 
 **Résultat après patch :**
 
 ```c
@@ -577,11 +368,16 @@ void FUN_001037c0(void)
 001037c0  RET   ; ← Seule instruction restante
 ```
 
-> **Figure 10 – Code de FUN_001037c0 dans Ghidra APRÈS patch**
+#### 2. Exporter le binaire patché
 
-![Figure 10 - Ghidra après patch](screenshots/ghidra_antidebug_after.png)
+<p align="center"> <img src="images/26.png" width="600"> </p>
+
+
+
 
 ### Réintégration du Binaire Patché dans l'APK
+<p align="center"> <img src="images/26.1.png" width="600"> </p>
+<p align="center"> <img src="images/27.png" width="600"> </p>
 
 ```bash
 # Copier le libfoo.so patché dans le dossier décompilé
@@ -603,24 +399,23 @@ adb install UnCrackable3_final.apk
 ##  Extraction du Secret depuis la Mémoire
 
 ### Analyse de FUN_001012c0 – La Fonction de Validation
+<p align="center"> <img src="images/22.png" width="600"> </p>
+
+<p align="center"> <img src="images/29.png" width="600"> </p>
 
 En continuant l'analyse de `libfoo.so` dans Ghidra, on examine la fonction `FUN_001012c0`. Cette fonction est appelée lors de la validation de la chaîne saisie par l'utilisateur. Son décompilé révèle un tableau de valeurs encodées :
 
 ```c
 void FUN_001012c0(long *param_1)
 {
-    // Initialisation d'un buffer caché avec des données encodées
     param_1[0] = 0x1549170f1311081d;
     param_1[1] = 0x15131d5a1903000d;
     param_1[2] = 0x14130817005a0e08;
     
-    // ... (logique de comparaison / XOR)
+    // ... 
 }
 ```
 
-> **Figure 11 – Fonction FUN_001012c0 dans Ghidra avec le buffer encodé**
-
-![Figure 11 - Buffer secret Ghidra](screenshots/ghidra_secret_buffer.png)
 
 ### Interprétation des Données
 
@@ -733,6 +528,7 @@ Lors de l'analyse de `MainActivity` dans JADX, nous avons identifié une constan
 ```java
 private static final String xorkey = "pizzapizzapizzapizzapizza";
 ```
+<p align="center"> <img src="images/29.1.png" width="600"> </p>
 
 Cette clé est passée à la fonction native `init()` :
 
@@ -748,21 +544,14 @@ La fonction native utilise cette clé pour encoder/décoder le secret via une op
 
 ### Script de Décryptage Python
 
-```python
-#!/usr/bin/env python3
-"""
-OWASP UnCrackable Level 3 – Décryptage XOR
-Auteur : [Votre nom]
-"""
+<p align="center"> <img src="images/30.png" width="600"> </p>
 
-# Secret encodé extrait de libfoo.so (après conversion little endian)
+```python
 encoded_hex = "1d0811130f1749150d0003195a1d1315080e5a0017081314"
 encoded = bytes.fromhex(encoded_hex)
 
-# Clé XOR identifiée dans MainActivity.java
 xor_key = b"pizzapizzapizzapizzapizza"
 
-# Opération XOR byte par byte
 secret = bytes(a ^ b for a, b in zip(encoded, xor_key))
 
 print(f"[*] Octets encodés  : {encoded.hex()}")
@@ -771,11 +560,6 @@ print(f"[*] Secret décodé   : {secret.decode('utf-8')}")
 ```
 
 ### Exécution et Résultat
-
-```bash
-python3 decrypt_xor.py
-```
-
 ```
 [*] Octets encodés  : 1d0811130f1749150d0003195a1d1315080e5a0017081314
 [*] Clé XOR         : pizzapizzapizzapizzapizza
@@ -806,25 +590,11 @@ Le résultat final est :
 
 On lance l'application patchée sur l'émulateur et on saisit le secret découvert dans le champ de texte :
 
-```
-making owasp great again
-```
-
-On appuie sur le bouton **VERIFY**.
-
-> **Figure 12 – Saisie du secret dans l'application**
-
-![Figure 12 - Saisie secret](screenshots/app_input_secret.png)
+<p align="center"> <img src="images/31.png" width="600"> </p>
 
 ### Message de Succès
 
-L'application affiche un message de confirmation, prouvant que le secret est correct :
-
-> **Figure 13 – Message de succès affiché par l'application**
-
-![Figure 13 - Succès](screenshots/app_success.png)
-
-Le challenge est **résolu avec succès** ✅
+L'application affiche un message de confirmation, prouvant que le secret est correct 
 
 ---
 
@@ -866,15 +636,15 @@ Ce projet a permis de mener une analyse complète d'une application Android fort
 
 | Étape | Technique | Outil | Résultat |
 |-------|-----------|-------|---------|
-| ✅ Analyse Java | Décompilation | JADX | Identification du XOR key et de showDialog() |
-| ✅ Bypass Java | Patch Smali | apktool | Neutralisation de la root detection |
-| ✅ Signature | Re-signing | apksigner | APK réinstallable et fonctionnel |
-| ✅ Analyse native | Décompilation ARM | Ghidra | Identification de la détection anti-Frida |
-| ✅ Bypass natif | Patch binaire | Ghidra | Neutralisation de FUN_001037c0 |
-| ✅ Extraction | Analyse statique | Ghidra | Buffer encodé de 24 octets extrait |
-| ✅ Conversion | Little Endian | Manuel/Python | Octets correctement réordonnés |
-| ✅ Décryptage | XOR | Python | Secret `making owasp great again` obtenu |
-| ✅ Validation | Test app | adb | Message de succès affiché |
+|  Analyse Java | Décompilation | JADX | Identification du XOR key et de showDialog() |
+|  Bypass Java | Patch Smali | apktool | Neutralisation de la root detection |
+|  Signature | Re-signing | apksigner | APK réinstallable et fonctionnel |
+|  Analyse native | Décompilation ARM | Ghidra | Identification de la détection anti-Frida |
+|  Bypass natif | Patch binaire | Ghidra | Neutralisation de FUN_001037c0 |
+|  Extraction | Analyse statique | Ghidra | Buffer encodé de 24 octets extrait |
+|  Conversion | Little Endian | Manuel/Python | Octets correctement réordonnés |
+|  Décryptage | XOR | Python | Secret `making owasp great again` obtenu |
+|  Validation | Test app | adb | Message de succès affiché |
 
 ### Points Clés à Retenir
 
@@ -884,30 +654,9 @@ Ce projet a permis de mener une analyse complète d'une application Android fort
 4. **Le XOR est symétrique** : connaître la clé suffit à décrypter (et à chiffrer)
 5. **Aucune protection client-side n'est inviolable** face à un attaquant motivé disposant des bons outils
 
-### Perspectives
 
-Pour aller plus loin dans la sécurisation des applications Android, les équipes de développement devraient considérer :
-- L'intégration de **SafetyNet / Play Integrity API** pour une détection de root côté serveur
-- L'utilisation de **R8/ProGuard** avec des règles d'obfuscation agressives
-- L'implémentation de **certificate pinning** pour sécuriser les communications réseau
-- Le recours à des solutions de **RASP** (Runtime Application Self-Protection) commerciales
+
 
 ---
 
-## 📎 Ressources
 
-- [OWASP MASTG – Mobile Application Security Testing Guide](https://mas.owasp.org/)
-- [OWASP UnCrackable Apps Repository](https://github.com/OWASP/owasp-mastg/tree/master/Crackmes)
-- [Ghidra – NSA Reverse Engineering Tool](https://ghidra-sre.org/)
-- [JADX – Dex to Java Decompiler](https://github.com/skylot/jadx)
-- [apktool – Android APK Tool](https://apktool.org/)
-- [Frida – Dynamic Instrumentation Toolkit](https://frida.re/)
-
----
-
-<div align="center">
-
-**Réalisé dans le cadre d'un projet académique de cybersécurité mobile**  
-*OWASP UnCrackable App Level 3 – Reverse Engineering Challenge*
-
-</div>
