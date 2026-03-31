@@ -67,7 +67,7 @@ Contourner **toutes** ces couches de protection afin d'extraire la chaîne secr�
 |-----------|--------|
 | Système hôte | Windows 10/11 |
 | Émulateur Android | AVD (Android Virtual Device) via Android Studio |
-| Architecture cible | x86 / ARM (selon l'émulateur) |
+| Architecture cible | x86_64 |
 | APK cible | `UnCrackable-Level3.apk` |
 
 ### Outils Utilisés
